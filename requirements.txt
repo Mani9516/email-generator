@@ -3,3 +3,9 @@ requests==2.31.0
 beautifulsoup4==4.12.2
 phonenumbers==8.13.15
 cohere
+transformers
+accelerate
+sentencepiece
+python-docx
+reportlab
+torch
