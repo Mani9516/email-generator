@@ -1,11 +1,11 @@
-import cohere  # Corrected the import statement
+import cohere
 import streamlit as st
 
 # Set your Cohere API key
-api_key = '1x80ZH7kbo388pl1NneQIAIuIIWhXJb9s4QObRLn'
+api_key = "1x80ZH7kbo388pl1NneQIAIuIIWhXJb9s4QObRLn"
 co = cohere.Client(api_key)
 
-# EmailPrompt class to structure the input
+# EmailPrompt class
 class EmailPrompt:
     def __init__(self, user_prompt, recipient_name, sender_name, sender_position):
         self.user_prompt = user_prompt
@@ -15,43 +15,41 @@ class EmailPrompt:
 
     def to_prompt(self):
         return f"""
-### User Prompt: {self.user_prompt}
+You are an AI email writer. Write a professional email.
 
-### Recipient Information:
+User Prompt: {self.user_prompt}
+
+Recipient:
 - Name: {self.recipient_name}
 
-### Sender Information:
+Sender:
 - Name: {self.sender_name}
 - Position: {self.sender_position}
 
-### Generated Email:
+Write the complete email in a natural, polite tone.
 """
-
-# Function to generate email using Cohere
+        
+# FIXED: Using Chat API instead of Generate API
 def generate_email(prompt: EmailPrompt):
     full_prompt = prompt.to_prompt()
-    
-    response = co.generate(
-        model='command-xlarge-nightly',  # Use the appropriate model
-        prompt=full_prompt,
-        max_tokens=200,
+
+    response = co.chat(
+        model="command-r",
+        message=full_prompt,
         temperature=0.7,
     )
-    
-    email_body = response.generations[0].text.strip()
-    return email_body
 
-# Streamlit app layout
+    return response.text.strip()
+
+# Streamlit UI
 def main():
-    st.title("AI Email Generator")
+    st.title("AI Email Generator (Cohere Chat API)")
 
-    # User input fields
     user_prompt = st.text_input("Enter your email prompt:")
     recipient_name = st.text_input("Enter recipient name:")
     sender_name = st.text_input("Enter your name:")
     sender_position = st.text_input("Enter your position:")
 
-    # Generate button and action
     if st.button("Generate Email"):
         if not user_prompt or not recipient_name or not sender_name or not sender_position:
             st.warning("All fields are required!")
@@ -61,6 +59,5 @@ def main():
             st.subheader("Generated Email")
             st.text_area("Email Body", value=email_body, height=300)
 
-# Run the app
 if __name__ == "__main__":
     main()
