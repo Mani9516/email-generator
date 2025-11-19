@@ -1,63 +1,106 @@
-import cohere
 import streamlit as st
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+from docx import Document
+from reportlab.platypus import SimpleDocTemplate, Paragraph
+from reportlab.lib.styles import getSampleStyleSheet
+import io
 
-# Set your Cohere API key
-api_key = "1x80ZH7kbo388pl1NneQIAIuIIWhXJb9s4QObRLn"
-co = cohere.Client(api_key)
-
-# EmailPrompt class
-class EmailPrompt:
-    def __init__(self, user_prompt, recipient_name, sender_name, sender_position):
-        self.user_prompt = user_prompt
-        self.recipient_name = recipient_name
-        self.sender_name = sender_name
-        self.sender_position = sender_position
-
-    def to_prompt(self):
-        return f"""
-You are an AI email writer. Write a professional email.
-
-User Prompt: {self.user_prompt}
-
-Recipient:
-- Name: {self.recipient_name}
-
-Sender:
-- Name: {self.sender_name}
-- Position: {self.sender_position}
-
-Write the complete email in a natural, polite tone.
-"""
-        
-# FIXED: Using Chat API instead of Generate API
-def generate_email(prompt: EmailPrompt):
-    full_prompt = prompt.to_prompt()
-
-    response = co.chat(
-        model="command-r",
-        message=full_prompt,
-        temperature=0.7,
+# ----------------------------------------
+# Load Local Model (NO API)
+# ----------------------------------------
+@st.cache_resource
+def load_model():
+    tokenizer = AutoTokenizer.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+    model = AutoModelForCausalLM.from_pretrained(
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        torch_dtype=torch.float32,
+        device_map="cpu"
     )
+    return tokenizer, model
 
-    return response.text.strip()
+tokenizer, model = load_model()
 
+# ----------------------------------------
+# Templates
+# ----------------------------------------
+TEMPLATES = {
+    "Casual": "Write a casual friendly email about: {prompt}",
+    "Formal": "Write a formal business email about: {prompt}",
+    "Apology": "Write a sincere apology email for: {prompt}",
+    "Request": "Write a polite request email regarding: {prompt}",
+    "Complaint": "Write a professional complaint email about: {prompt}",
+}
+
+# ----------------------------------------
+# Generate Email (Local LLM)
+# ----------------------------------------
+def generate_email(prompt):
+    inputs = tokenizer(prompt, return_tensors="pt")
+    output = model.generate(
+        **inputs,
+        max_new_tokens=250,
+        temperature=0.7,
+        do_sample=True,
+        top_k=50
+    )
+    return tokenizer.decode(output[0], skip_special_tokens=True)
+
+# ----------------------------------------
+# PDF Export
+# ----------------------------------------
+def download_pdf(text):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer)
+    styles = getSampleStyleSheet()
+    story = [Paragraph(text.replace("\n", "<br/>"), styles["Normal"])]
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+# ----------------------------------------
+# DOCX Export
+# ----------------------------------------
+def download_docx(text):
+    doc = Document()
+    for line in text.split("\n"):
+        doc.add_paragraph(line)
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+# ----------------------------------------
 # Streamlit UI
-def main():
-    st.title("AI Email Generator (Cohere Chat API)")
+# ----------------------------------------
+st.title("📧 Offline AI Email Generator (No API Needed)")
+st.write("Powered by TinyLlama — fully offline, no keys, no cost.")
 
-    user_prompt = st.text_input("Enter your email prompt:")
-    recipient_name = st.text_input("Enter recipient name:")
-    sender_name = st.text_input("Enter your name:")
-    sender_position = st.text_input("Enter your position:")
+prompt = st.text_input("Email Purpose")
+recipient = st.text_input("Recipient Name")
+sender = st.text_input("Your Name")
+position = st.text_input("Your Position")
 
-    if st.button("Generate Email"):
-        if not user_prompt or not recipient_name or not sender_name or not sender_position:
-            st.warning("All fields are required!")
-        else:
-            prompt = EmailPrompt(user_prompt, recipient_name, sender_name, sender_position)
-            email_body = generate_email(prompt)
-            st.subheader("Generated Email")
-            st.text_area("Email Body", value=email_body, height=300)
+template_choice = st.selectbox("Choose Email Template", list(TEMPLATES.keys()))
 
-if __name__ == "__main__":
-    main()
+if st.button("Generate Email"):
+    if not prompt or not recipient or not sender:
+        st.error("Please fill all fields.")
+    else:
+        template = TEMPLATES[template_choice]
+        full_prompt = template.format(prompt=prompt)
+
+        email_body = generate_email(full_prompt)
+
+        st.subheader("Generated Email")
+        st.text_area("Email Output", value=email_body, height=300)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            pdf = download_pdf(email_body)
+            st.download_button("Download PDF", pdf, "email.pdf")
+
+        with col2:
+            docx = download_docx(email_body)
+            st.download_button("Download DOCX", docx, "email.docx")
